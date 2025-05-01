@@ -330,13 +330,38 @@ export async function receiveMessageById(queueUrl: string, messageId: string): P
 
 export async function deleteMessage(queueUrl: string, receiptHandle: string): Promise<boolean> {
   try {
-    const command = new DeleteMessageCommand({
-      QueueUrl: queueUrl,
-      ReceiptHandle: receiptHandle,
-    });
+    console.log(`Attempting to delete message from queue ${queueUrl}`);
     
-    await client.send(command);
-    return true;
+    // Try a few times in case of transient SQS issues
+    const MAX_ATTEMPTS = 3;
+    
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        console.log(`Delete attempt ${attempt + 1}`);
+        
+        const command = new DeleteMessageCommand({
+          QueueUrl: queueUrl,
+          ReceiptHandle: receiptHandle,
+        });
+        
+        await client.send(command);
+        console.log('Message successfully deleted');
+        return true;
+      } catch (attemptError) {
+        // If this is the last attempt, throw to be caught by outer handler
+        if (attempt === MAX_ATTEMPTS - 1) {
+          throw attemptError;
+        }
+        
+        console.error(`Delete attempt ${attempt + 1} failed:`, attemptError);
+        
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    
+    // Shouldn't reach here due to throw in last attempt, but return false to be safe
+    return false;
   } catch (error) {
     console.error(`Error deleting message from queue ${queueUrl}:`, error);
     return false;
