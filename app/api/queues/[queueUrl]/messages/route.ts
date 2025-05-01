@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sendMessage, receiveMessages, deleteMessage } from '@/app/lib/sqs';
+import { sendMessage, receiveMessages, peekMessages, deleteMessage, receiveMessageById } from '@/app/lib/sqs';
 
 export async function GET(request: NextRequest, { params }: { params: { queueUrl: string } }) {
   try {
@@ -10,7 +10,14 @@ export async function GET(request: NextRequest, { params }: { params: { queueUrl
     const searchParams = request.nextUrl.searchParams;
     const maxMessages = parseInt(searchParams.get('max') || '10', 10);
     
-    const messages = await receiveMessages(decodedQueueUrl, maxMessages);
+    // Check if we should use receive or peek mode (default to peek)
+    const mode = searchParams.get('mode') || 'peek';
+    
+    // Use the appropriate function based on the mode
+    const messages = mode === 'receive' 
+      ? await receiveMessages(decodedQueueUrl, maxMessages)
+      : await peekMessages(decodedQueueUrl, maxMessages);
+      
     return NextResponse.json(messages);
   } catch (error) {
     console.error('Error in GET /api/queues/[queueUrl]/messages:', error);
@@ -46,18 +53,41 @@ export async function POST(request: NextRequest, { params }: { params: { queueUr
 export async function DELETE(request: NextRequest, { params }: { params: { queueUrl: string } }) {
   try {
     const decodedQueueUrl = Buffer.from(params.queueUrl, 'base64').toString('utf-8');
-    const { receiptHandle } = await request.json();
+    const { receiptHandle, messageId, peekMode } = await request.json();
     
-    if (!receiptHandle) {
-      return NextResponse.json({ error: 'Receipt handle is required' }, { status: 400 });
-    }
-    
-    const success = await deleteMessage(decodedQueueUrl, receiptHandle);
-    
-    if (success) {
-      return NextResponse.json({ success: true });
-    } else {
-      return NextResponse.json({ error: 'Failed to delete message' }, { status: 500 });
+    // If in peek mode and a messageId is provided, we need to fetch a fresh receipt handle
+    if (peekMode && messageId) {
+      console.log('Peek mode delete requested for message ID:', messageId);
+      
+      // Get a fresh receipt handle for the message
+      const message = await receiveMessageById(decodedQueueUrl, messageId);
+      
+      if (!message) {
+        return NextResponse.json({ error: 'Message not found or no longer available' }, { status: 404 });
+      }
+      
+      // Delete with the fresh receipt handle
+      const success = await deleteMessage(decodedQueueUrl, message.receiptHandle);
+      
+      if (success) {
+        return NextResponse.json({ success: true });
+      } else {
+        return NextResponse.json({ error: 'Failed to delete message' }, { status: 500 });
+      }
+    } 
+    // Standard delete with provided receipt handle
+    else if (receiptHandle) {
+      const success = await deleteMessage(decodedQueueUrl, receiptHandle);
+      
+      if (success) {
+        return NextResponse.json({ success: true });
+      } else {
+        return NextResponse.json({ error: 'Failed to delete message' }, { status: 500 });
+      }
+    } 
+    // No valid delete parameters
+    else {
+      return NextResponse.json({ error: 'Receipt handle or message ID is required' }, { status: 400 });
     }
   } catch (error) {
     console.error('Error in DELETE /api/queues/[queueUrl]/messages:', error);

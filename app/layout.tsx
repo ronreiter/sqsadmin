@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "SQS Admin",
   description: "Manage your Amazon SQS queues",
+  icons: {
+    icon: '/sqs.svg',
+    apple: '/sqs.svg',
+  },
 };
 
 export default function RootLayout({

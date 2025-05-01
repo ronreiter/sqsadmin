@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -11,8 +12,15 @@ export default function Header() {
       <nav className="container mx-auto px-4 sm:px-6 lg:px-8" aria-label="Top">
         <div className="flex items-center justify-between py-3">
           <div className="flex items-center">
-            <Link href="/" className="text-xl font-bold text-indigo-600 dark:text-indigo-400">
-              SQS Admin
+            <Link href="/" className="flex items-center space-x-2 text-xl font-bold text-indigo-600 dark:text-indigo-400">
+              <Image 
+                src="/sqs.svg" 
+                alt="SQS Logo" 
+                width={32} 
+                height={32} 
+                className="rounded-md"
+              />
+              <span>SQS Admin</span>
             </Link>
           </div>
           <div className="hidden md:flex md:items-center md:space-x-6">

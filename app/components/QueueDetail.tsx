@@ -23,9 +23,10 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
   const [messageInput, setMessageInput] = useState('{}');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [refreshInterval, setRefreshInterval] = useState<number | null>(null);
+  const [refreshInterval, setRefreshInterval] = useState<number | null>(null); // Will be set in useEffect
   const [isValidJson, setIsValidJson] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc'); // Default to most recent first
   
   // Check and update dark mode
   const checkDarkMode = useCallback(() => {
@@ -39,7 +40,9 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       setError(null);
       
       // The API expects the encoded queueUrl directly
-      const response = await fetch(`/api/queues/${queueUrl}/messages`);
+      // Always use peek mode with a higher message limit (50 instead of default 10)
+      // This helps ensure we get as many messages as possible
+      const response = await fetch(`/api/queues/${queueUrl}/messages?mode=peek&max=50`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch messages: ${response.statusText}`);
@@ -61,6 +64,10 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
     // Initial dark mode check
     checkDarkMode();
     
+    // Start auto-refresh by default (5 second interval)
+    const interval = window.setInterval(fetchMessages, 5000);
+    setRefreshInterval(interval as unknown as number);
+    
     // Create observer for theme changes
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
@@ -78,6 +85,7 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       if (refreshInterval) {
         clearInterval(refreshInterval);
       }
+      clearInterval(interval);
       observer.disconnect();
     };
   }, [queueUrl, checkDarkMode]);
@@ -145,15 +153,20 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
     }
   };
 
-  const handleDeleteMessage = async (receiptHandle: string) => {
+  const [deletingMessageIds, setDeletingMessageIds] = useState<Set<string>>(new Set());
+  
+  const handleDeleteMessage = async (message: Message) => {
     try {
+      const messageId = message.id;
+      setDeletingMessageIds(prev => new Set([...prev, messageId]));
+      
       // The API expects the encoded queueUrl directly
       const response = await fetch(`/api/queues/${queueUrl}/messages`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ receiptHandle }),
+        body: JSON.stringify({ messageId, peekMode: true }), // Always use peek mode
       });
       
       if (!response.ok) {
@@ -162,10 +175,17 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       }
       
       // Remove the message from the list
-      setMessages(messages.filter(msg => msg.receiptHandle !== receiptHandle));
+      setMessages(messages.filter(msg => msg.id !== messageId));
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete message');
       console.error('Error deleting message:', err);
+    } finally {
+      setDeletingMessageIds(prev => {
+        const updated = new Set(prev);
+        updated.delete(message.id);
+        return updated;
+      });
     }
   };
 
@@ -173,10 +193,17 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
     try {
       // Try to parse as JSON
       const parsedBody = JSON.parse(body);
-      return <JsonView data={parsedBody} />;
+      return (
+        <div className="font-mono">
+          <JsonView 
+            data={parsedBody} 
+            shouldExpandNode={() => true} // Expand all nodes by default
+          />
+        </div>
+      );
     } catch {
       // If it's not JSON, display as is
-      return <pre className="whitespace-pre-wrap">{body}</pre>;
+      return <pre className="whitespace-pre-wrap font-mono">{body}</pre>;
     }
   };
 
@@ -187,10 +214,20 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       ? messages.reduce((sum, msg) => sum + msg.body.length, 0) / messageCount 
       : 0;
     
+    // Find the oldest message timestamp
+    let oldestMessageTime = 'N/A';
+    if (messageCount > 0) {
+      const timestamps = messages.map(msg => msg.timestamp || 0).filter(t => t > 0);
+      if (timestamps.length > 0) {
+        const oldestTimestamp = Math.min(...timestamps);
+        oldestMessageTime = new Date(oldestTimestamp).toLocaleString();
+      }
+    }
+    
     return {
       messageCount,
       avgMessageSize: Math.round(avgMessageSize),
-      oldestMessage: messageCount > 0 ? new Date().toISOString() : 'N/A', // Would come from attributes.SentTimestamp
+      oldestMessage: oldestMessageTime,
       activeRefresh: refreshInterval !== null
     };
   };
@@ -294,6 +331,11 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Avg. Message Size</dt>
                   <dd className="mt-1 text-sm text-gray-900 dark:text-white">{stats.avgMessageSize} bytes</dd>
                 </div>
+                
+                <div className="sm:col-span-1">
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Oldest Message</dt>
+                  <dd className="mt-1 text-sm text-gray-900 dark:text-white">{stats.oldestMessage}</dd>
+                </div>
 
                 <div className="sm:col-span-1">
                   <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Visibility Timeout</dt>
@@ -365,7 +407,9 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       <div className="bg-white dark:bg-gray-800 shadow dark:shadow-gray-700 sm:rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <div className="flex justify-between items-center">
-            <h3 className="text-lg font-medium leading-6 text-gray-900 dark:text-white">Messages in {queueName}</h3>
+            <div>
+              <h3 className="text-lg font-medium leading-6 text-gray-900 dark:text-white">Messages in {queueName}</h3>
+            </div>
             <div className="flex space-x-2">
               <button
                 type="button"
@@ -396,18 +440,76 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
               </div>
             ) : (
               <div className="space-y-4">
-                {messages.map((message) => (
+                {/* Add sort direction control */}
+                <div className="flex justify-end mb-4">
+                  <div className="inline-flex shadow-sm rounded-md">
+                    <button
+                      type="button"
+                      onClick={() => setSortDirection('asc')}
+                      className={`relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 text-sm font-medium ${
+                        sortDirection === 'asc' 
+                          ? 'bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-100' 
+                          : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      Oldest First
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSortDirection('desc')}
+                      className={`relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 text-sm font-medium ${
+                        sortDirection === 'desc' 
+                          ? 'bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-100' 
+                          : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      Newest First
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Sort messages by timestamp */}
+                {[...messages]
+                  .sort((a, b) => {
+                    const aTimestamp = a.timestamp || 0;
+                    const bTimestamp = b.timestamp || 0;
+                    return sortDirection === 'asc' ? aTimestamp - bTimestamp : bTimestamp - aTimestamp;
+                  })
+                  .map((message) => (
                   <div key={message.id} className="border border-gray-200 dark:border-gray-700 rounded-md p-4 dark:bg-gray-700">
                     <div className="flex justify-between">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white">
-                        Message ID: {message.id}
+                      <div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">
+                          Message ID: {message.id}
+                        </div>
+                        {message.timestamp && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Date: {new Date(message.timestamp).toLocaleString()}
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleDeleteMessage(message.receiptHandle)}
-                        className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 dark:text-red-200 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                        onClick={() => handleDeleteMessage(message)}
+                        disabled={deletingMessageIds.has(message.id)}
+                        className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 dark:text-red-200 bg-red-100 dark:bg-red-900 hover:bg-red-200 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
                       >
-                        Delete
+                        {deletingMessageIds.has(message.id) ? (
+                          <span className="flex items-center">
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Deleting...
+                          </span>
+                        ) : (
+                          <span className="flex items-center">
+                            <svg className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete
+                          </span>
+                        )}
                       </button>
                     </div>
                     <div className="mt-2 text-sm text-gray-700 dark:text-gray-300">

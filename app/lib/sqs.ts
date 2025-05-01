@@ -38,6 +38,7 @@ export type Message = {
   body: string;
   receiptHandle: string;
   attributes?: Record<string, any>;
+  timestamp?: number; // Timestamp in milliseconds
 };
 
 export type PaginatedResponse<T> = {
@@ -109,15 +110,151 @@ export async function receiveMessages(queueUrl: string, maxMessages: number = 10
     
     const response = await client.send(command);
     
-    return (response.Messages || []).map(message => ({
+    return (response.Messages || []).map(message => {
+      // Get timestamp from SentTimestamp attribute or default to current time
+      const timestamp = message.Attributes?.SentTimestamp 
+        ? parseInt(message.Attributes.SentTimestamp) 
+        : Date.now();
+      
+      return {
+        id: message.MessageId || '',
+        body: message.Body || '',
+        receiptHandle: message.ReceiptHandle || '',
+        attributes: message.Attributes,
+        timestamp: timestamp,
+      };
+    });
+  } catch (error) {
+    console.error(`Error receiving messages from queue ${queueUrl}:`, error);
+    return [];
+  }
+}
+
+/**
+ * Peek at messages without fully consuming them from the queue.
+ * Uses multiple requests with a very short visibility timeout to maximize message retrieval.
+ */
+export async function peekMessages(queueUrl: string, maxMessages: number = 10): Promise<Message[]> {
+  try {
+    // Track seen message IDs to avoid duplicates
+    const seenMessageIds = new Set<string>();
+    const allMessages: Message[] = [];
+    
+    // The maximum number of batches to attempt (prevent infinite loops)
+    // We use more batches than strictly needed to increase chances of seeing all messages
+    const MAX_BATCHES = Math.ceil(maxMessages / 5) + 2;
+    
+    // Make multiple API calls to maximize our chance of seeing all messages
+    for (let batchNum = 0; batchNum < MAX_BATCHES; batchNum++) {
+      // Use a very short visibility timeout - just long enough to process a response
+      // Each attempt will release messages quickly to make them available for future requests
+      const command = new ReceiveMessageCommand({
+        QueueUrl: queueUrl,
+        MaxNumberOfMessages: 10, // Always request max allowed by SQS API
+        AttributeNames: ['All'],
+        MessageAttributeNames: ['All'],
+        VisibilityTimeout: 1, // Very short timeout so messages quickly become visible again
+        WaitTimeSeconds: batchNum === 0 ? 2 : 1, // Longer wait on first request, shorter on follow-ups
+      });
+      
+      const response = await client.send(command);
+      const messages = response.Messages || [];
+      
+      // If we got no messages and it's not the first attempt, we're likely done
+      if (messages.length === 0 && batchNum > 0) {
+        break;
+      }
+      
+      // Process the batch of messages
+      for (const message of messages) {
+        const messageId = message.MessageId || '';
+        
+        // Skip duplicate messages
+        if (seenMessageIds.has(messageId)) {
+          continue;
+        }
+        
+        // Add to the seen set
+        seenMessageIds.add(messageId);
+        
+        // Get timestamp from SentTimestamp attribute or default to current time
+        const timestamp = message.Attributes?.SentTimestamp 
+          ? parseInt(message.Attributes.SentTimestamp) 
+          : Date.now();
+        
+        allMessages.push({
+          id: messageId,
+          body: message.Body || '',
+          receiptHandle: message.ReceiptHandle || '',
+          attributes: message.Attributes,
+          timestamp: timestamp,
+        });
+        
+        // If we've reached the requested number of messages, stop
+        if (allMessages.length >= maxMessages) {
+          break;
+        }
+      }
+      
+      // If we've reached our target message count, we're done
+      if (allMessages.length >= maxMessages) {
+        break;
+      }
+      
+      // If we got fewer than 10 messages, we might have seen them all
+      // But we'll still try at least one more time to be sure
+      if (messages.length < 10 && batchNum > 0) {
+        break;
+      }
+    }
+    
+    return allMessages;
+  } catch (error) {
+    console.error(`Error peeking messages from queue ${queueUrl}:`, error);
+    return [];
+  }
+}
+
+/**
+ * Receives a specific message by its ID to get a valid receipt handle for deletion.
+ * This is useful when working with peek mode where receipt handles expire quickly.
+ */
+export async function receiveMessageById(queueUrl: string, messageId: string): Promise<Message | null> {
+  try {
+    // Fetch messages with a longer visibility timeout
+    const command = new ReceiveMessageCommand({
+      QueueUrl: queueUrl,
+      MaxNumberOfMessages: 10, // Retrieve multiple messages to increase chance of finding the target
+      AttributeNames: ['All'],
+      MessageAttributeNames: ['All'],
+      VisibilityTimeout: 30, // Use a longer timeout for deletion
+      WaitTimeSeconds: 0,
+    });
+    
+    const response = await client.send(command);
+    
+    // Find the message with the matching ID
+    const message = (response.Messages || []).find(msg => msg.MessageId === messageId);
+    
+    if (!message) {
+      return null;
+    }
+    
+    // Get timestamp from SentTimestamp attribute or default to current time
+    const timestamp = message.Attributes?.SentTimestamp 
+      ? parseInt(message.Attributes.SentTimestamp) 
+      : Date.now();
+      
+    return {
       id: message.MessageId || '',
       body: message.Body || '',
       receiptHandle: message.ReceiptHandle || '',
       attributes: message.Attributes,
-    }));
+      timestamp: timestamp,
+    };
   } catch (error) {
-    console.error(`Error receiving messages from queue ${queueUrl}:`, error);
-    return [];
+    console.error(`Error receiving message by ID from queue ${queueUrl}:`, error);
+    return null;
   }
 }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import QueueDetail from '@/app/components/QueueDetail';
@@ -9,6 +9,8 @@ import { QueueInfo } from '@/app/lib/sqs';
 
 export default function QueueDetailPage({ params }: { params: { queueUrl: string } }) {
   const router = useRouter();
+  const resolvedParams = use(params);
+  const queueUrl = resolvedParams.queueUrl;
   const [queueInfo, setQueueInfo] = useState<QueueInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,16 +20,13 @@ export default function QueueDetailPage({ params }: { params: { queueUrl: string
     const fetchQueueInfo = async () => {
       try {
         setLoading(true);
-        // Check if params and queueUrl are available
-        if (!params?.queueUrl) {
+        // Check if queueUrl is available
+        if (!queueUrl) {
           throw new Error('Queue URL parameter is missing');
         }
         
-        // Safely get the queueUrl
-        const queueUrlParam = params.queueUrl;
-        
         // Use the direct API endpoint to get queue details
-        const response = await fetch(`/api/queues/${queueUrlParam}`);
+        const response = await fetch(`/api/queues/${queueUrl}`);
         
         if (!response.ok) {
           throw new Error(`Failed to fetch queue: ${response.statusText}`);
@@ -49,7 +48,7 @@ export default function QueueDetailPage({ params }: { params: { queueUrl: string
     };
 
     fetchQueueInfo();
-  }, [params?.queueUrl]);
+  }, [queueUrl]);
 
   if (loading) {
     return (
@@ -103,7 +102,7 @@ export default function QueueDetailPage({ params }: { params: { queueUrl: string
       
       <main>
         <QueueDetail 
-          queueUrl={params.queueUrl || ''} 
+          queueUrl={queueUrl} 
           queueName={queueInfo.name} 
           queueAttributes={queueInfo.attributes}
         />

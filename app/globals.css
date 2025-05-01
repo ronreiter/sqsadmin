@@ -24,3 +24,44 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Custom JSON view styles for better readability */
+.font-mono ._GzYRV {
+  font-family: var(--font-mono), 'JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+/* Increase spacing for better readability */
+.font-mono ._2bkNM {
+  padding-left: 1.5rem;
+}
+
+/* Improve key-value spacing */
+.font-mono ._1MGIk, 
+.font-mono ._2bSDX {
+  margin-right: 0.5rem;
+}
+
+/* Adjust dark mode colors for better contrast */
+.dark .font-mono ._2bSDX,
+.dark .font-mono ._gsbQL {
+  color: rgb(220, 220, 255);
+}
+
+.dark .font-mono ._LaAZe,
+.dark .font-mono ._GTKgm {
+  color: rgb(160, 220, 210);
+}
+
+.dark .font-mono ._1prJR {
+  color: rgb(100, 180, 255);
+}
+
+/* Ensure all buttons have pointer cursor */
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
