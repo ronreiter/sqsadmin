@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CreateQueueParams } from '@/app/lib/sqs';
+import { CreateQueueParams } from '../lib/sqs';
 
 interface CreateQueueModalProps {
   isOpen: boolean;
@@ -22,9 +22,11 @@ export default function CreateQueueModal({ isOpen, onClose, onSuccess }: CreateQ
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Form submitted');
     
     if (!queueName.trim()) {
       setError('Queue name is required');
+      console.log('Error: Queue name is required');
       return;
     }
     
@@ -33,6 +35,7 @@ export default function CreateQueueModal({ isOpen, onClose, onSuccess }: CreateQ
     if (isFifo && !queueName.endsWith('.fifo')) {
       formattedQueueName = `${queueName}.fifo`;
     }
+    console.log('Queue name formatted:', formattedQueueName);
     
     const params: CreateQueueParams = {
       queueName: formattedQueueName,
@@ -60,6 +63,8 @@ export default function CreateQueueModal({ isOpen, onClose, onSuccess }: CreateQ
       setIsSubmitting(true);
       setError(null);
       
+      console.log('Submitting queue creation request with params:', params);
+      
       const response = await fetch('/api/queues/create', {
         method: 'POST',
         headers: {
@@ -68,10 +73,16 @@ export default function CreateQueueModal({ isOpen, onClose, onSuccess }: CreateQ
         body: JSON.stringify(params),
       });
       
+      console.log('Response status:', response.status);
+      
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Server returned error:', errorData);
         throw new Error(errorData.error || 'Failed to create queue');
       }
+      
+      const result = await response.json();
+      console.log('Queue created successfully:', result);
       
       // Reset form
       setQueueName('');
@@ -97,14 +108,14 @@ export default function CreateQueueModal({ isOpen, onClose, onSuccess }: CreateQ
   if (!isOpen) return null;
   
   return (
-    <div className="fixed inset-0 z-10 overflow-y-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen p-4 text-center">
         <div 
           className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-800 dark:bg-opacity-75 transition-opacity" 
           onClick={onClose}
         ></div>
 
-        <div className="inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle bg-white dark:bg-gray-900 rounded-lg shadow-xl transform transition-all">
+        <div className="inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle bg-white dark:bg-gray-900 rounded-lg shadow-xl transform transition-all relative z-50">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-medium leading-6 text-gray-900 dark:text-white">
               Create New Queue

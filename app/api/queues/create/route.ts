@@ -3,9 +3,12 @@ import { createQueue, CreateQueueParams } from '@/app/lib/sqs';
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('Create queue API called');
     const body = await request.json();
+    console.log('Request body:', body);
     
     if (!body.queueName) {
+      console.log('Queue name is missing in the request');
       return NextResponse.json({ error: 'Queue name is required' }, { status: 400 });
     }
     
@@ -14,6 +17,7 @@ export async function POST(request: NextRequest) {
       queueName: body.queueName,
       isFifo: body.isFifo === true,
     };
+    console.log('Queue params:', params);
     
     // Optional parameters
     if (body.delaySeconds !== undefined) {
@@ -32,11 +36,14 @@ export async function POST(request: NextRequest) {
       params.maxMessageSize = Number(body.maxMessageSize);
     }
     
+    console.log('Calling createQueue with params:', params);
     const result = await createQueue(params);
+    console.log('Create queue result:', result);
     
     if (result) {
       return NextResponse.json(result);
     } else {
+      console.log('Create queue failed - no result returned');
       return NextResponse.json({ error: 'Failed to create queue' }, { status: 500 });
     }
   } catch (error) {

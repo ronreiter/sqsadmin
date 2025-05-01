@@ -9,9 +9,23 @@ import {
   DeleteQueueCommand
 } from '@aws-sdk/client-sqs';
 
-const client = new SQSClient({
+// Configure SQS client
+const clientConfig: any = {
   region: process.env.AWS_REGION || 'us-east-1',
-});
+};
+
+// Use local endpoint if specified (for development/testing)
+if (process.env.SQS_ENDPOINT) {
+  clientConfig.endpoint = process.env.SQS_ENDPOINT;
+  // For local development, we don't need real credentials
+  clientConfig.credentials = {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'test',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'test'
+  };
+}
+
+console.log('SQS Client Config:', JSON.stringify(clientConfig, null, 2));
+const client = new SQSClient(clientConfig);
 
 export type QueueInfo = {
   url: string;
@@ -133,11 +147,14 @@ export interface CreateQueueParams {
 
 export async function createQueue(params: CreateQueueParams): Promise<QueueInfo | null> {
   try {
+    console.log('createQueue function called with params:', params);
+    
     // Validate and format the queue name for FIFO queues
     let queueName = params.queueName;
     if (params.isFifo && !queueName.endsWith('.fifo')) {
       queueName = `${queueName}.fifo`;
     }
+    console.log('Formatted queue name:', queueName);
 
     // Prepare queue attributes
     const attributes: Record<string, string> = {};
@@ -162,6 +179,9 @@ export async function createQueue(params: CreateQueueParams): Promise<QueueInfo 
     if (params.maxMessageSize !== undefined) {
       attributes['MaximumMessageSize'] = params.maxMessageSize.toString();
     }
+    
+    console.log('Queue attributes:', attributes);
+    console.log('SQS client config:', client.config);
 
     // Create the queue
     const command = new CreateQueueCommand({
@@ -169,20 +189,28 @@ export async function createQueue(params: CreateQueueParams): Promise<QueueInfo 
       Attributes: attributes
     });
     
+    console.log('Sending CreateQueueCommand...');
     const response = await client.send(command);
+    console.log('CreateQueueCommand response:', response);
     
     if (!response.QueueUrl) {
+      console.error('No QueueUrl returned from SQS');
       throw new Error('Failed to create queue: No queue URL returned');
     }
     
     // Get the queue attributes 
+    console.log('Getting queue attributes...');
     const queueAttributes = await getQueueAttributes(response.QueueUrl);
+    console.log('Queue attributes response:', queueAttributes);
     
-    return {
+    const result = {
       url: response.QueueUrl,
       name: queueName,
       attributes: queueAttributes
     };
+    
+    console.log('Returning queue info:', result);
+    return result;
   } catch (error) {
     console.error(`Error creating queue ${params.queueName}:`, error);
     return null;
