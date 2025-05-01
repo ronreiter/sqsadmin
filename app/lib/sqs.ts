@@ -132,83 +132,129 @@ export async function receiveMessages(queueUrl: string, maxMessages: number = 10
 
 /**
  * Peek at messages without fully consuming them from the queue.
- * Uses multiple requests with a very short visibility timeout to maximize message retrieval.
+ * Uses the most reliable approach to retrieve all messages while minimizing visibility impact.
  */
 export async function peekMessages(queueUrl: string, maxMessages: number = 10): Promise<Message[]> {
   try {
+    console.log(`Attempting to peek up to ${maxMessages} messages from ${queueUrl}`);
+    
     // Track seen message IDs to avoid duplicates
     const seenMessageIds = new Set<string>();
     const allMessages: Message[] = [];
     
-    // The maximum number of batches to attempt (prevent infinite loops)
-    // We use more batches than strictly needed to increase chances of seeing all messages
-    const MAX_BATCHES = Math.ceil(maxMessages / 5) + 2;
+    // First get the queue attributes to see how many messages are available
+    const attributes = await getQueueAttributes(queueUrl);
+    const approximateCount = parseInt(attributes.ApproximateNumberOfMessages || '0', 10);
     
-    // Make multiple API calls to maximize our chance of seeing all messages
-    for (let batchNum = 0; batchNum < MAX_BATCHES; batchNum++) {
-      // Use a very short visibility timeout - just long enough to process a response
-      // Each attempt will release messages quickly to make them available for future requests
-      const command = new ReceiveMessageCommand({
-        QueueUrl: queueUrl,
-        MaxNumberOfMessages: 10, // Always request max allowed by SQS API
-        AttributeNames: ['All'],
-        MessageAttributeNames: ['All'],
-        VisibilityTimeout: 1, // Very short timeout so messages quickly become visible again
-        WaitTimeSeconds: batchNum === 0 ? 2 : 1, // Longer wait on first request, shorter on follow-ups
-      });
-      
-      const response = await client.send(command);
-      const messages = response.Messages || [];
-      
-      // If we got no messages and it's not the first attempt, we're likely done
-      if (messages.length === 0 && batchNum > 0) {
-        break;
-      }
-      
-      // Process the batch of messages
-      for (const message of messages) {
-        const messageId = message.MessageId || '';
+    console.log(`Queue reports approximately ${approximateCount} messages available`);
+    
+    // Make multiple requests with different visibility timeouts to maximize coverage
+    // We'll make at least 4 attempts regardless of how many messages the queue claims to have
+    const requestsNeeded = Math.max(4, Math.ceil(approximateCount / 8));
+    
+    console.log(`Planning to make ${requestsNeeded} requests to retrieve messages`);
+    
+    // Track messages that we've seen but might still need to re-receive
+    const alreadyProcessed = new Set<string>();
+    
+    for (let attempt = 0; attempt < requestsNeeded; attempt++) {
+      try {
+        console.log(`Starting peek attempt ${attempt + 1}`);
         
-        // Skip duplicate messages
-        if (seenMessageIds.has(messageId)) {
+        // Each request uses a different visibility timeout to avoid collisions with previous requests
+        // and to try to maximize visibility of different subsets of messages
+        const visibilityTimeout = (attempt % 3) + 1; // Use 1, 2, or 3 seconds
+        
+        const command = new ReceiveMessageCommand({
+          QueueUrl: queueUrl,
+          MaxNumberOfMessages: 10, // SQS max is 10
+          AttributeNames: ['All'],
+          MessageAttributeNames: ['All'],
+          VisibilityTimeout: visibilityTimeout, 
+          // Use longer wait time for deeper queue inspection
+          WaitTimeSeconds: attempt === 0 ? 3 : 1,
+        });
+        
+        const response = await client.send(command);
+        const messages = response.Messages || [];
+        
+        console.log(`Attempt ${attempt + 1}: Received ${messages.length} messages`);
+        
+        if (messages.length === 0) {
+          // If we get no messages on the first attempt, the queue might be empty
+          if (attempt === 0 && approximateCount === 0) {
+            console.log('Queue appears to be empty, ending peek early');
+            break;
+          }
+          
+          // If this isn't the first empty response, we've likely seen everything visible
+          if (attempt > 2) {
+            console.log('Multiple empty responses, likely seen all available messages');
+            break;
+          }
+          
+          // Otherwise, continue trying with a different visibility timeout
           continue;
         }
         
-        // Add to the seen set
-        seenMessageIds.add(messageId);
+        let newMessageCount = 0;
         
-        // Get timestamp from SentTimestamp attribute or default to current time
-        const timestamp = message.Attributes?.SentTimestamp 
-          ? parseInt(message.Attributes.SentTimestamp) 
-          : Date.now();
+        // Process the batch of messages
+        for (const message of messages) {
+          const messageId = message.MessageId || '';
+          
+          // Skip if we've already added this message to our result set
+          if (seenMessageIds.has(messageId)) {
+            console.log(`Skipping already seen message ID: ${messageId}`);
+            continue;
+          }
+          
+          // Mark as processed
+          seenMessageIds.add(messageId);
+          alreadyProcessed.add(messageId);
+          newMessageCount++;
+          
+          // Get timestamp from SentTimestamp attribute or default to current time
+          const timestamp = message.Attributes?.SentTimestamp 
+            ? parseInt(message.Attributes.SentTimestamp) 
+            : Date.now();
+          
+          allMessages.push({
+            id: messageId,
+            body: message.Body || '',
+            receiptHandle: message.ReceiptHandle || '',
+            attributes: message.Attributes,
+            timestamp: timestamp,
+          });
+        }
         
-        allMessages.push({
-          id: messageId,
-          body: message.Body || '',
-          receiptHandle: message.ReceiptHandle || '',
-          attributes: message.Attributes,
-          timestamp: timestamp,
-        });
+        console.log(`Added ${newMessageCount} new messages to result set`);
         
-        // If we've reached the requested number of messages, stop
-        if (allMessages.length >= maxMessages) {
+        // If we didn't get any new messages in this batch, try a few more times then stop
+        if (newMessageCount === 0 && attempt > 2) {
+          console.log('No new messages found in recent attempts, likely retrieved all visible messages');
           break;
         }
+        
+        // If we've exceeded the maximum requested messages, stop
+        if (allMessages.length >= maxMessages) {
+          console.log(`Reached maximum requested message count (${maxMessages}), stopping`);
+          break;
+        }
+      } catch (batchError) {
+        console.error(`Error in peek attempt ${attempt + 1}:`, batchError);
       }
       
-      // If we've reached our target message count, we're done
-      if (allMessages.length >= maxMessages) {
-        break;
-      }
-      
-      // If we got fewer than 10 messages, we might have seen them all
-      // But we'll still try at least one more time to be sure
-      if (messages.length < 10 && batchNum > 0) {
-        break;
+      // Small delay between requests to help with SQS distributed nature
+      if (attempt < requestsNeeded - 1) {
+        await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay
       }
     }
     
-    return allMessages;
+    console.log(`Peek completed, returning ${allMessages.length} messages`);
+    
+    // Return messages up to the maximum requested
+    return allMessages.slice(0, maxMessages);
   } catch (error) {
     console.error(`Error peeking messages from queue ${queueUrl}:`, error);
     return [];
@@ -218,40 +264,64 @@ export async function peekMessages(queueUrl: string, maxMessages: number = 10): 
 /**
  * Receives a specific message by its ID to get a valid receipt handle for deletion.
  * This is useful when working with peek mode where receipt handles expire quickly.
+ * Uses multiple attempts to maximize chances of finding the target message.
  */
 export async function receiveMessageById(queueUrl: string, messageId: string): Promise<Message | null> {
   try {
-    // Fetch messages with a longer visibility timeout
-    const command = new ReceiveMessageCommand({
-      QueueUrl: queueUrl,
-      MaxNumberOfMessages: 10, // Retrieve multiple messages to increase chance of finding the target
-      AttributeNames: ['All'],
-      MessageAttributeNames: ['All'],
-      VisibilityTimeout: 30, // Use a longer timeout for deletion
-      WaitTimeSeconds: 0,
-    });
+    console.log(`Attempting to receive specific message ID: ${messageId} from queue ${queueUrl}`);
     
-    const response = await client.send(command);
+    // Make multiple attempts with different visibility timeouts
+    // to increase chances of finding the target message
+    const MAX_ATTEMPTS = 5;
     
-    // Find the message with the matching ID
-    const message = (response.Messages || []).find(msg => msg.MessageId === messageId);
-    
-    if (!message) {
-      return null;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      console.log(`Attempt ${attempt + 1} to find message ID: ${messageId}`);
+      
+      // Fetch messages with a longer visibility timeout for deletion
+      const command = new ReceiveMessageCommand({
+        QueueUrl: queueUrl,
+        MaxNumberOfMessages: 10, // Retrieve multiple messages to increase chance of finding the target
+        AttributeNames: ['All'],
+        MessageAttributeNames: ['All'],
+        VisibilityTimeout: 30, // Use a longer timeout for deletion
+        WaitTimeSeconds: attempt === 0 ? 2 : 1, // Longer wait on first attempt
+      });
+      
+      const response = await client.send(command);
+      const messages = response.Messages || [];
+      
+      console.log(`Received ${messages.length} messages in attempt ${attempt + 1}`);
+      
+      // Find the message with the matching ID
+      const message = messages.find(msg => msg.MessageId === messageId);
+      
+      if (message) {
+        console.log(`Found target message ID: ${messageId}`);
+        
+        // Get timestamp from SentTimestamp attribute or default to current time
+        const timestamp = message.Attributes?.SentTimestamp 
+          ? parseInt(message.Attributes.SentTimestamp) 
+          : Date.now();
+          
+        return {
+          id: message.MessageId || '',
+          body: message.Body || '',
+          receiptHandle: message.ReceiptHandle || '',
+          attributes: message.Attributes,
+          timestamp: timestamp,
+        };
+      }
+      
+      // If we didn't find the message and there are more attempts left,
+      // wait a bit before the next try to allow for SQS distribution delays
+      if (attempt < MAX_ATTEMPTS - 1) {
+        console.log(`Message not found, waiting before attempt ${attempt + 2}`);
+        await new Promise(resolve => setTimeout(resolve, 300)); // 300ms delay
+      }
     }
     
-    // Get timestamp from SentTimestamp attribute or default to current time
-    const timestamp = message.Attributes?.SentTimestamp 
-      ? parseInt(message.Attributes.SentTimestamp) 
-      : Date.now();
-      
-    return {
-      id: message.MessageId || '',
-      body: message.Body || '',
-      receiptHandle: message.ReceiptHandle || '',
-      attributes: message.Attributes,
-      timestamp: timestamp,
-    };
+    console.log(`Failed to find message ID: ${messageId} after ${MAX_ATTEMPTS} attempts`);
+    return null;
   } catch (error) {
     console.error(`Error receiving message by ID from queue ${queueUrl}:`, error);
     return null;
