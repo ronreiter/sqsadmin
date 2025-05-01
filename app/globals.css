@@ -25,6 +25,12 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+@keyframes loading {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
 /* Custom JSON view styles for better readability */
 .font-mono ._GzYRV {
   font-family: var(--font-mono), 'JetBrains Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
@@ -42,19 +48,37 @@ body {
   margin-right: 0.5rem;
 }
 
-/* Adjust dark mode colors for better contrast */
+/* Adjust dark mode colors for better contrast - JsonView */
+.dark .font-mono .JsonView, 
+.dark .JsonView {
+  background-color: #111827 !important;
+}
+
+/* Keys */
 .dark .font-mono ._2bSDX,
-.dark .font-mono ._gsbQL {
-  color: rgb(220, 220, 255);
+.dark .font-mono ._gsbQL,
+.dark span[style*="color: rgb(27, 94, 32)"] {
+  color: rgb(147, 197, 253) !important; /* blue-300 */
 }
 
+/* String values */
 .dark .font-mono ._LaAZe,
-.dark .font-mono ._GTKgm {
-  color: rgb(160, 220, 210);
+.dark .font-mono ._GTKgm,
+.dark span[style*="color: rgb(163, 21, 21)"] {
+  color: rgb(167, 139, 250) !important; /* violet-300 */
 }
 
-.dark .font-mono ._1prJR {
-  color: rgb(100, 180, 255);
+/* Numbers and booleans */
+.dark .font-mono ._1prJR,
+.dark span[style*="color: rgb(0, 0, 255)"],
+.dark span[style*="color: rgb(16, 63, 145)"] {
+  color: rgb(251, 191, 36) !important; /* amber-400 */
+}
+
+/* All elements in JsonView in dark mode */
+.dark .JsonView span, 
+.dark .JsonView div {
+  background-color: transparent !important;
 }
 
 /* Ensure all buttons have pointer cursor */

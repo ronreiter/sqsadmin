@@ -10,7 +10,6 @@ export default function Home() {
       
       <main>
         <section className="bg-white dark:bg-gray-800 shadow dark:shadow-gray-700 rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4 dark:text-white">Your Queues</h2>
           <QueueList />
         </section>
       </main>

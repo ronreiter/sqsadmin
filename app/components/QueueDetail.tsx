@@ -7,7 +7,7 @@ import 'react-json-view-lite/dist/index.css';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-json';
 import 'ace-builds/src-noconflict/theme-github';
-import 'ace-builds/src-noconflict/theme-monokai';
+import 'ace-builds/src-noconflict/theme-dracula';
 import 'ace-builds/src-noconflict/theme-tomorrow_night';
 
 interface QueueDetailProps {
@@ -54,7 +54,10 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       setError(err instanceof Error ? err.message : 'Failed to fetch messages');
       console.error('Error fetching messages:', err);
     } finally {
-      setLoading(false);
+      // Small delay to ensure loader is visible for at least a moment
+      setTimeout(() => {
+        setLoading(false);
+      }, 300);
     }
   };
 
@@ -189,22 +192,81 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
 
   const formatMessageBody = (body: string) => {
     try {
-      // Try to parse as JSON
+      // Try to parse as JSON and format it
       const parsedBody = JSON.parse(body);
+      const formattedJson = JSON.stringify(parsedBody, null, 2);
+      
       return (
-        <div className="font-mono">
-          <JsonView 
-            data={parsedBody} 
-            shouldExpandNode={() => true} // Expand all nodes by default
+        <div className="rounded overflow-hidden">
+          <AceEditor
+            mode="json"
+            theme="dracula"
+            value={formattedJson}
+            readOnly={true}
+            name="message-viewer"
+            editorProps={{ $blockScrolling: true }}
+            setOptions={{
+              showLineNumbers: true,
+              showGutter: true,
+              highlightActiveLine: false,
+              showPrintMargin: false,
+              tabSize: 2,
+              useWorker: false,
+            }}
+            width="100%"
+            height="auto"
+            minLines={5}
+            maxLines={30}
+            fontSize={12}
+            wrapEnabled={true}
+            style={{ borderRadius: '4px' }}
           />
         </div>
       );
     } catch {
       // If it's not JSON, display as is
-      return <pre className="whitespace-pre-wrap font-mono">{body}</pre>;
+      return <pre className="whitespace-pre-wrap font-mono bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 p-3 rounded">{body}</pre>;
     }
   };
 
+  // Determine message status based on attributes and display with appropriate styling
+  const getMessageStatus = (message: Message) => {
+    // Check attributes to determine status
+    const attributes = message.attributes || {};
+    let status = 'Available';
+    let statusClass = 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100';
+    
+    // Check if delayed
+    if (attributes.ApproximateFirstReceiveTimestamp && attributes.SentTimestamp) {
+      const sentTime = parseInt(attributes.SentTimestamp, 10);
+      const receiveTime = parseInt(attributes.ApproximateFirstReceiveTimestamp, 10);
+      
+      // If first receive time is significantly later than sent time, message was delayed
+      if (receiveTime - sentTime > 1000) { // More than 1 second delay
+        status = 'Delayed';
+        statusClass = 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100';
+      }
+    }
+    
+    // Check for in-flight status (has been received but not deleted)
+    if (attributes.ApproximateReceiveCount && parseInt(attributes.ApproximateReceiveCount, 10) > 0) {
+      status = 'In Flight';
+      statusClass = 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100';
+    }
+    
+    // Check if message is being deleted
+    if (deletingMessageIds.has(message.id)) {
+      status = 'Deleting';
+      statusClass = 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100';
+    }
+    
+    return (
+      <span className={`px-2 py-1 text-xs font-medium rounded-full ${statusClass}`}>
+        {status}
+      </span>
+    );
+  };
+  
   // Get detailed information from the messages
   const getQueueStats = () => {
     const messageCount = messages.length;
@@ -282,7 +344,7 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
               
               <div className="sm:col-span-1">
                 <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">Delayed Messages</dt>
-                <dd className="mt-1 text-sm text-gray-900 dark:text-white">
+                <dd className="mt-1 text-sm text-gray-900 dark:text-white font-semibold">
                   {queueAttributes?.ApproximateNumberOfMessagesDelayed || '0'}
                 </dd>
               </div>
@@ -365,7 +427,17 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
             </div>
           )}
           
-          {messages.length === 0 ? (
+          {/* Loading indicator */}
+          {loading && (
+            <div className="mt-2 mb-4">
+              <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden">
+                <div className="h-1 bg-indigo-600 dark:bg-indigo-500 animate-[loading_2s_ease-in-out_infinite]"></div>
+              </div>
+              <p className="text-sm text-center text-gray-500 dark:text-gray-400 mt-1">Loading messages...</p>
+            </div>
+          )}
+          
+          {!loading && messages.length === 0 ? (
             <div className="text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
               No messages available in this queue.
             </div>
@@ -382,6 +454,9 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Message ID
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Status
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Preview
@@ -425,6 +500,9 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400 max-w-[200px] truncate">
                               {message.id}
                             </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              {getMessageStatus(message)}
+                            </td>
                             <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-[300px] truncate font-mono">
                               {preview}
                             </td>
@@ -443,7 +521,7 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
                           </tr>
                           {selectedMessageId === message.id && (
                             <tr className="bg-gray-50 dark:bg-gray-700">
-                              <td colSpan={5} className="px-6 py-4">
+                              <td colSpan={6} className="px-6 py-4">
                                 <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
                                   <div className="text-sm text-gray-700 dark:text-gray-300">
                                     {formatMessageBody(message.body)}
@@ -466,7 +544,7 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       {isProduceModalOpen && (
         <div className="fixed inset-0 overflow-hidden z-50">
           <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 bg-gray-900 opacity-50 dark:bg-gray-900 dark:bg-opacity-75 transition-opacity"
+            <div className="absolute inset-0 bg-gray-900 opacity-50 dark:bg-gray-900 dark:opacity-75 transition-opacity"
                  onClick={toggleProduceModal}></div>
             <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10">
               <div className="pointer-events-auto relative w-screen max-w-md">
@@ -491,28 +569,29 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
                       </p>
                     </div>
                     <div className="mt-6">
-                      <AceEditor
-                        mode="json"
-                        theme={isDarkMode ? 'tomorrow_night' : 'github'}
-                        value={messageInput}
-                        onChange={(value) => {
-                          setMessageInput(value);
-                          validateJson(value);
-                        }}
-                        name="message-editor"
-                        editorProps={{ $blockScrolling: true }}
-                        setOptions={{
-                          showLineNumbers: true,
-                          tabSize: 2,
-                          useWorker: false,
-                        }}
-                        width="100%"
-                        height="300px"
-                        fontSize={14}
-                        showPrintMargin={false}
-                        className={`rounded-md border ${isValidJson ? 'border-gray-300 dark:border-gray-600' : 'border-red-500 dark:border-red-500'}`}
-                        style={{ backgroundColor: isDarkMode ? '#1f2937' : '#ffffff' }}
-                      />
+                      <div className="dark:bg-gray-900 rounded-md overflow-hidden">
+                        <AceEditor
+                          mode="json"
+                          theme="dracula"
+                          value={messageInput}
+                          onChange={(value) => {
+                            setMessageInput(value);
+                            validateJson(value);
+                          }}
+                          name="message-editor"
+                          editorProps={{ $blockScrolling: true }}
+                          setOptions={{
+                            showLineNumbers: true,
+                            tabSize: 2,
+                            useWorker: false,
+                          }}
+                          width="100%"
+                          height="300px"
+                          fontSize={14}
+                          showPrintMargin={false}
+                          className={`rounded-md border ${isValidJson ? 'border-gray-300 dark:border-gray-600' : 'border-red-500 dark:border-red-500'}`}
+                        />
+                      </div>
                     </div>
                     {sendError && (
                       <div className="mt-2 text-sm text-red-600 dark:text-red-400">

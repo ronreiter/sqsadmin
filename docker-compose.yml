@@ -6,14 +6,14 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "8086:8086"
     environment:
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - SQS_ENDPOINT=http://localstack:4566
-    depends_on:
-      - localstack
+#    depends_on:
+#      - localstack
     networks:
       - sqsadmin-network
 
