@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import QueueDetail from '@/app/components/QueueDetail';
+import DeleteQueueModal from '@/app/components/DeleteQueueModal';
 import { QueueInfo } from '@/app/lib/sqs';
 
 export default function QueueDetailPage({ params }: { params: { queueUrl: string } }) {
+  const router = useRouter();
   const [queueInfo, setQueueInfo] = useState<QueueInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchQueueInfo = async () => {
@@ -76,10 +80,20 @@ export default function QueueDetailPage({ params }: { params: { queueUrl: string
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
+      <div className="mb-8 flex justify-between items-center">
         <Link href="/" className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-900 dark:hover:text-indigo-300">
           ← Back to queue list
         </Link>
+        
+        <button
+          onClick={() => setIsDeleteModalOpen(true)}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+        >
+          <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Delete Queue
+        </button>
       </div>
       
       <header className="mb-8">
@@ -94,6 +108,17 @@ export default function QueueDetailPage({ params }: { params: { queueUrl: string
           queueAttributes={queueInfo.attributes}
         />
       </main>
+      
+      {/* Delete Modal */}
+      {queueInfo && (
+        <DeleteQueueModal
+          isOpen={isDeleteModalOpen}
+          queueName={queueInfo.name}
+          queueUrl={queueInfo.url}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onSuccess={() => router.push('/')}
+        />
+      )}
     </div>
   );
 }
