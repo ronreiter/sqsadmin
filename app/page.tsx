@@ -2,7 +2,7 @@ import QueueList from './components/QueueList';
 
 export default function Home() {
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-4">
       <header className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">SQS Admin</h1>
         <p className="mt-2 text-gray-600 dark:text-gray-400">Manage your Amazon SQS queues</p>
