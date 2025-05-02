@@ -142,6 +142,10 @@ This is a [Next.js](https://nextjs.org) project with the following structure:
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+## GitHub Pages
+
+Visit our [GitHub Pages site](https://ronreiter.github.io/sqsadmin/) for more information about SQS Admin, including features, screenshots, and getting started guides.
+
 ## License
 
 This project is open source and available under the [MIT License](LICENSE).

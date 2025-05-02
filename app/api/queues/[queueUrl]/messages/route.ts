@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendMessage, receiveMessages, peekMessages, deleteMessage, receiveMessageById } from '@/app/lib/sqs';
 
-export async function GET(request: NextRequest, { params }: { params: { queueUrl: string } }) {
+export async function GET(
+  request: NextRequest, 
+  context: { params: { queueUrl: string } }
+) {
   try {
     // The queueUrl will be base64 encoded since it contains special characters
-    const decodedQueueUrl = Buffer.from(params.queueUrl, 'base64').toString('utf-8');
+    const decodedQueueUrl = Buffer.from(context.params.queueUrl, 'base64').toString('utf-8');
     
     // Get the max messages from query parameter or default to 10
     const searchParams = request.nextUrl.searchParams;
@@ -25,9 +28,12 @@ export async function GET(request: NextRequest, { params }: { params: { queueUrl
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { queueUrl: string } }) {
+export async function POST(
+  request: NextRequest, 
+  context: { params: { queueUrl: string } }
+) {
   try {
-    const decodedQueueUrl = Buffer.from(params.queueUrl, 'base64').toString('utf-8');
+    const decodedQueueUrl = Buffer.from(context.params.queueUrl, 'base64').toString('utf-8');
     const { message } = await request.json();
     
     if (!message) {
@@ -50,9 +56,12 @@ export async function POST(request: NextRequest, { params }: { params: { queueUr
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { queueUrl: string } }) {
+export async function DELETE(
+  request: NextRequest, 
+  context: { params: { queueUrl: string } }
+) {
   try {
-    const decodedQueueUrl = Buffer.from(params.queueUrl, 'base64').toString('utf-8');
+    const decodedQueueUrl = Buffer.from(context.params.queueUrl, 'base64').toString('utf-8');
     const { receiptHandle, messageId, peekMode } = await request.json();
     
     // If in peek mode and a messageId is provided, we need to fetch a fresh receipt handle
