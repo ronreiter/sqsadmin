@@ -6,10 +6,6 @@ const nextConfig: NextConfig = {
   env: {
     PORT: process.env.PORT || '8086',
   },
-  // Configure server to listen on the specified port
-  server: {
-    port: parseInt(process.env.PORT || '8086', 10),
-  },
 };
 
 export default nextConfig;

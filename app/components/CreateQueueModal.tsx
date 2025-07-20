@@ -148,7 +148,7 @@ export default function CreateQueueModal({ isOpen, onClose, onSuccess }: CreateQ
               />
               {isFifo && !queueName.endsWith('.fifo') && (
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Note: ".fifo" will be automatically appended to the queue name.
+                  Note: &quot;.fifo&quot; will be automatically appended to the queue name.
                 </p>
               )}
             </div>

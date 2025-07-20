@@ -7,7 +7,7 @@ import QueueDetail from '@/app/components/QueueDetail';
 import DeleteQueueModal from '@/app/components/DeleteQueueModal';
 import { QueueInfo } from '@/app/lib/sqs';
 
-export default function QueueDetailPage({ params }: { params: { queueUrl: string } }) {
+export default function QueueDetailPage({ params }: { params: Promise<{ queueUrl: string }> }) {
   const router = useRouter();
   const resolvedParams = use(params);
   const queueUrl = resolvedParams.queueUrl;

@@ -9,8 +9,10 @@ import {
   DeleteQueueCommand
 } from '@aws-sdk/client-sqs';
 
+import { SQSClientConfig } from '@aws-sdk/client-sqs';
+
 // Configure SQS client
-const clientConfig: any = {
+const clientConfig: SQSClientConfig = {
   region: process.env.AWS_REGION || 'us-east-1',
 };
 
@@ -37,7 +39,7 @@ export type Message = {
   id: string;
   body: string;
   receiptHandle: string;
-  attributes?: Record<string, any>;
+  attributes?: Record<string, string | undefined>;
   timestamp?: number; // Timestamp in milliseconds
 };
 

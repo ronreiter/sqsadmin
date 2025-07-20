@@ -3,11 +3,12 @@ import { sendMessage, receiveMessages, peekMessages, deleteMessage, receiveMessa
 
 export async function GET(
   request: NextRequest, 
-  context: { params: { queueUrl: string } }
+  context: { params: Promise<{ queueUrl: string }> }
 ) {
   try {
     // The queueUrl will be base64 encoded since it contains special characters
-    const decodedQueueUrl = Buffer.from(context.params.queueUrl, 'base64').toString('utf-8');
+    const params = await context.params;
+    const decodedQueueUrl = Buffer.from(params.queueUrl, 'base64').toString('utf-8');
     
     // Get the max messages from query parameter or default to 10
     const searchParams = request.nextUrl.searchParams;
@@ -30,10 +31,11 @@ export async function GET(
 
 export async function POST(
   request: NextRequest, 
-  context: { params: { queueUrl: string } }
+  context: { params: Promise<{ queueUrl: string }> }
 ) {
   try {
-    const decodedQueueUrl = Buffer.from(context.params.queueUrl, 'base64').toString('utf-8');
+    const params = await context.params;
+    const decodedQueueUrl = Buffer.from(params.queueUrl, 'base64').toString('utf-8');
     const { message } = await request.json();
     
     if (!message) {
@@ -58,10 +60,11 @@ export async function POST(
 
 export async function DELETE(
   request: NextRequest, 
-  context: { params: { queueUrl: string } }
+  context: { params: Promise<{ queueUrl: string }> }
 ) {
   try {
-    const decodedQueueUrl = Buffer.from(context.params.queueUrl, 'base64').toString('utf-8');
+    const params = await context.params;
+    const decodedQueueUrl = Buffer.from(params.queueUrl, 'base64').toString('utf-8');
     const { receiptHandle, messageId, peekMode } = await request.json();
     
     // If in peek mode and a messageId is provided, we need to fetch a fresh receipt handle

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Message } from '../lib/sqs';
-import { JsonView } from 'react-json-view-lite';
 import 'react-json-view-lite/dist/index.css';
 import AceEditor from 'react-ace';
 import 'ace-builds/src-noconflict/mode-json';
@@ -25,16 +24,14 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
   const [sendError, setSendError] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<number | null>(null); // Will be set in useEffect
   const [isValidJson, setIsValidJson] = useState(true);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc'); // Default to most recent first
   
-  // Check and update dark mode
+  // Check and determine if dark mode is active
   const checkDarkMode = useCallback(() => {
-    const isDark = document.documentElement.classList.contains('dark');
-    setIsDarkMode(isDark);
+    return document.documentElement.classList.contains('dark');
   }, []);
 
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -59,7 +56,7 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
         setLoading(false);
       }, 300);
     }
-  };
+  }, [queueUrl]);
 
   useEffect(() => {
     // Fetch messages on first page view
@@ -89,7 +86,7 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
       }
       observer.disconnect();
     };
-  }, [queueUrl, checkDarkMode]);
+  }, [queueUrl, checkDarkMode, fetchMessages, refreshInterval]);
 
   const toggleAutoRefresh = () => {
     if (refreshInterval) {
@@ -497,7 +494,7 @@ export default function QueueDetail({ queueUrl, queueName, queueAttributes }: Qu
                                 ? new Date(message.timestamp).toLocaleString() 
                                 : 'N/A'}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400 max-w-[200px] truncate">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-400 max-w-[350px] truncate">
                               {message.id}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm">
