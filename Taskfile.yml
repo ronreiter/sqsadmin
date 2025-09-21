@@ -1,0 +1,32 @@
+version: '3'
+
+tasks:
+  build-docker:
+    desc: Build and push multi-platform Docker image
+    cmds:
+      - docker buildx build --push --platform linux/arm/v7,linux/arm64/v8,linux/amd64 --tag ronreiter/sqsadmin:latest .
+
+  dev:
+    desc: Start development server
+    cmds:
+      - npm run dev
+
+  build:
+    desc: Build the application
+    cmds:
+      - npm run build
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - npm install
+
+  localstack:
+    desc: Start LocalStack for local development
+    cmds:
+      - docker-compose -f docker-compose-localstack.yml up
+
+  compose:
+    desc: Start application with Docker Compose
+    cmds:
+      - docker-compose up
